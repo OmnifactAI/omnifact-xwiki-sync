@@ -1,0 +1,25 @@
+xwiki:
+  baseUrl: "https://wiki.example.com"
+  username: "syncbot"
+  password: "${XWIKI_PASSWORD}"
+  wiki: "xwiki"
+
+omnifact:
+  apiKey: "${OMNIFACT_API_KEY}"
+  baseUrl: "https://connect.omnifact.ai"
+
+routes:
+  - xwikiSpace: "Engineering"
+    omnifactSpaceId: "space-uuid-1"
+  - xwikiSpace: "Product"
+    omnifactSpaceId: "space-uuid-2"
+    exclude: ["Product.Internal%"]
+  - xwikiSpace: "Engineering.Backend.APIs"
+    omnifactSpaceId: "space-uuid-3"
+
+sync:
+  stateFile: ".sync-state.json"
+
+attachments:
+  enabled: true
+  includeTypes: ["pdf", "png", "jpg", "jpeg", "gif", "svg", "docx", "xlsx"]

@@ -1,0 +1,32 @@
+{
+  "name": "omnifact-xwiki-sync",
+  "version": "1.0.0",
+  "description": "Sync XWiki articles to Omnifact Spaces",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "omnifact-xwiki-sync": "dist/index.js"
+  },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "keywords": [],
+  "author": "Omnifact GmbH",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.13.6",
+    "commander": "^14.0.3",
+    "dotenv": "^16.4.7",
+    "js-yaml": "^4.1.1",
+    "turndown": "^7.2.2"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.13.10",
+    "@types/turndown": "^5.0.5",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}
