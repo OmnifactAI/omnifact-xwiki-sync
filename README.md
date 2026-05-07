@@ -1,5 +1,7 @@
 # omnifact-xwiki-sync
 
+[🇩🇪 Deutsche Version](README.DE.md)
+
 CLI tool that syncs wiki articles from XWiki to [Omnifact](https://omnifact.ai) Spaces for RAG. Fetches pages via the XWiki REST API, converts them to Markdown, and uploads them as documents to Omnifact Spaces.
 
 ## Features
