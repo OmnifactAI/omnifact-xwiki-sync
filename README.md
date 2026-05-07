@@ -7,9 +7,10 @@ CLI tool that syncs wiki articles from XWiki to [Omnifact](https://omnifact.ai) 
 - Configurable routing: map XWiki spaces to Omnifact Space IDs
 - Incremental sync: tracks page versions, only syncs changes
 - Handles new, updated, and deleted pages
+- Full recursive traversal of nested XWiki spaces and sub-pages
 - Attachment syncing with configurable filetype allowlist
-- Nested XWiki spaces supported (e.g. `Engineering.Backend.APIs`)
 - Dry-run mode to preview changes
+- `list-wikis` command to inspect what would be synced before running
 
 ## Setup
 
@@ -31,20 +32,26 @@ Edit `config.yaml` to define your XWiki → Omnifact space mappings.
 ## Usage
 
 ```bash
+# List all pages that would be synced (good first step)
+npx omnifact-xwiki-sync list-wikis
+
+# Preview changes without syncing
+npx omnifact-xwiki-sync sync --dry-run
+
 # Sync all configured routes
 npx omnifact-xwiki-sync sync
 
 # Sync a specific space only
 npx omnifact-xwiki-sync sync --space Engineering
 
-# Preview changes without syncing
-npx omnifact-xwiki-sync sync --dry-run
-
 # Show current sync state
 npx omnifact-xwiki-sync status
 
 # Use a custom config file
 npx omnifact-xwiki-sync sync --config my-config.yaml
+
+# Debug HTTP requests (logs every URL and error responses)
+npx omnifact-xwiki-sync sync --debug
 ```
 
 ## Configuration
@@ -132,7 +139,7 @@ Controls whether file attachments on XWiki pages are synced to Omnifact.
 | `enabled` | no | `false` | Set to `true` to sync attachments |
 | `includeTypes` | no | `[]` | File extensions to include (without the dot). Only attachments matching these extensions are synced. Example: `["pdf", "docx", "png"]` |
 
-Each attachment is uploaded as a separate document to Omnifact, named `"PageName - filename.ext"`.
+Each attachment is uploaded as a separate document to Omnifact, named `"Space.SubSpace.PageName - filename.ext"`.
 
 ### Environment variable substitution
 
@@ -143,8 +150,9 @@ If a referenced variable is not set, the tool exits with an error naming the mis
 ## Development
 
 ```bash
-# Run in development mode
+# Run in development mode (no build needed)
 npm run dev -- sync --dry-run
+npm run dev -- list-wikis
 
 # Build for production
 npm run build
