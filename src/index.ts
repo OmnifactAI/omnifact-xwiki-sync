@@ -18,11 +18,12 @@ program
   .option("-c, --config <path>", "Path to config file", "config.yaml")
   .option("-s, --space <space>", "Sync only this XWiki space")
   .option("-d, --dry-run", "Show what would change without making changes")
+  .option("--debug", "Log every HTTP request URL")
   .action(async (opts) => {
     try {
       const config = loadConfig(opts.config);
-      const xwikiClient = new XWikiClient(config.xwiki);
-      const omnifactClient = new OmnifactClient(config.omnifact);
+      const xwikiClient = new XWikiClient(config.xwiki, opts.debug);
+      const omnifactClient = new OmnifactClient(config.omnifact, opts.debug);
       let state = loadState(config.sync.stateFile);
 
       const routes = opts.space
@@ -94,6 +95,54 @@ program
 
       if (Object.keys(state).length === 0) {
         console.log("No sync state found. Run 'sync' first.");
+      }
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("list-wikis")
+  .description("Recursively list all pages in configured XWiki spaces")
+  .option("-c, --config <path>", "Path to config file", "config.yaml")
+  .option("-s, --space <space>", "List only this XWiki space")
+  .option("--debug", "Log every HTTP request URL")
+  .action(async (opts) => {
+    try {
+      const config = loadConfig(opts.config);
+      const xwikiClient = new XWikiClient(config.xwiki, opts.debug);
+
+      const routes = opts.space
+        ? config.routes.filter((r) => r.xwikiSpace === opts.space)
+        : config.routes;
+
+      if (routes.length === 0) {
+        console.error(`No routes found${opts.space ? ` for space "${opts.space}"` : ""}`);
+        process.exit(1);
+      }
+
+      for (const route of routes) {
+        console.log(`\nRoute: ${route.xwikiSpace} → ${route.omnifactSpaceId}`);
+        const pages = await xwikiClient.listAllPages(route.xwikiSpace);
+        let syncCount = 0;
+        let excludedCount = 0;
+
+        for (const page of pages) {
+          const excluded = route.exclude?.some((pattern) => {
+            const regex = new RegExp("^" + pattern.replace(/%/g, ".*") + "$");
+            return regex.test(page.fullName);
+          });
+          if (excluded) {
+            console.log(`  [excluded] ${page.fullName}`);
+            excludedCount++;
+          } else {
+            console.log(`  ${page.fullName}`);
+            syncCount++;
+          }
+        }
+
+        console.log(`  → ${syncCount} page(s)${excludedCount > 0 ? `, ${excludedCount} excluded` : ""}`);
       }
     } catch (err) {
       console.error(err instanceof Error ? err.message : err);

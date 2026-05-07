@@ -1,17 +1,75 @@
-import axios, { type AxiosInstance } from "axios";
+import axios, { isAxiosError, type AxiosInstance } from "axios";
 import type { OmnifactConfig } from "../config.js";
 import type { OmnifactDocument } from "./types.js";
+
+const MIME_TYPES: Record<string, string> = {
+  txt: "text/plain",
+  json: "application/json",
+  md: "text/markdown",
+  markdown: "text/markdown",
+  csv: "text/csv",
+  svg: "image/svg+xml",
+  pdf: "application/pdf",
+  doc: "application/msword",
+  dot: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  dotx: "application/vnd.openxmlformats-officedocument.wordprocessingml.template",
+  odt: "application/vnd.oasis.opendocument.text",
+  ott: "application/vnd.oasis.opendocument.text-template",
+  ppt: "application/vnd.ms-powerpoint",
+  pot: "application/vnd.ms-powerpoint",
+  pps: "application/vnd.ms-powerpoint",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ppsx: "application/vnd.openxmlformats-officedocument.presentationml.slideshow",
+  potx: "application/vnd.openxmlformats-officedocument.presentationml.template",
+  odp: "application/vnd.oasis.opendocument.presentation",
+  otp: "application/vnd.oasis.opendocument.presentation-template",
+};
+
+function mimeTypeForFilename(filename: string): string {
+  const ext = filename.slice(filename.lastIndexOf(".") + 1).toLowerCase();
+  return MIME_TYPES[ext] ?? "application/octet-stream";
+}
 
 export class OmnifactClient {
   private http: AxiosInstance;
 
-  constructor(config: OmnifactConfig) {
+  constructor(config: OmnifactConfig, debug = false) {
     this.http = axios.create({
       baseURL: config.baseUrl,
       headers: {
         "X-API-Key": config.apiKey,
       },
     });
+    if (debug) {
+      this.http.interceptors.request.use((req) => {
+        const base = (req.baseURL ?? "").replace(/\/$/, "");
+        const url = new URL(base + (req.url ?? ""));
+        console.debug(`[Omnifact] ${req.method?.toUpperCase()} ${url}`);
+        return req;
+      });
+      this.http.interceptors.response.use(
+        (res) => res,
+        (err) => {
+          if (isAxiosError(err) && err.response) {
+            const req = err.config;
+            const res = err.response;
+            const base = (req?.baseURL ?? "").replace(/\/$/, "");
+            const url = base + (req?.url ?? "");
+            console.debug(`[Omnifact] Error ${res.status} on ${req?.method?.toUpperCase()} ${url}`);
+            if (req?.data instanceof FormData) {
+              const obj: Record<string, string> = {};
+              (req.data as FormData).forEach((v, k) => {
+                obj[k] = v instanceof Blob ? `<Blob ${v.size}b>` : String(v);
+              });
+              console.debug("[Omnifact] Request body:", JSON.stringify(obj, null, 2));
+            }
+            console.debug("[Omnifact] Response body:", JSON.stringify(res.data, null, 2));
+          }
+          return Promise.reject(err);
+        }
+      );
+    }
   }
 
   async uploadDocument(
@@ -25,7 +83,7 @@ export class OmnifactClient {
     form.append("name", name);
     form.append(
       "file",
-      new Blob([new Uint8Array(content)]),
+      new Blob([new Uint8Array(content)], { type: mimeTypeForFilename(filename) }),
       filename
     );
     if (metadata) {

@@ -17,6 +17,13 @@ function getExtension(filename: string): string {
   return idx >= 0 ? filename.slice(idx + 1).toLowerCase() : "";
 }
 
+function isExcluded(fullName: string, exclude: string[] | undefined): boolean {
+  return exclude?.some((pattern) => {
+    const regex = new RegExp("^" + pattern.replace(/%/g, ".*") + "$");
+    return regex.test(fullName);
+  }) ?? false;
+}
+
 export async function syncRoute(
   route: Route,
   xwikiClient: XWikiClient,
@@ -28,23 +35,16 @@ export async function syncRoute(
   const spaceState = state[space] || {};
   const summary: SyncSummary = { created: 0, updated: 0, deleted: 0, skipped: 0, errors: [] };
 
-  // Fetch all pages from XWiki
-  const pages = await xwikiClient.listPages(space);
-  const pageNames = new Set(pages.map((p) => p.name));
+  const pages = await xwikiClient.listAllPages(space);
+  const pageKeys = new Set(pages.map((p) => p.fullName));
 
-  // Process each page
   for (const page of pages) {
-    const existing = spaceState[page.name];
-
-    // Check exclude patterns
-    if (route.exclude?.some((pattern) => {
-      const regex = new RegExp("^" + pattern.replace(/%/g, ".*") + "$");
-      return regex.test(page.fullName);
-    })) {
+    if (isExcluded(page.fullName, route.exclude)) {
       summary.skipped++;
       continue;
     }
 
+    const existing = spaceState[page.fullName];
     const isNew = !existing;
     const isModified = existing && page.modified > existing.lastModified;
 
@@ -54,27 +54,22 @@ export async function syncRoute(
     }
 
     try {
-      // Delete old doc if updating
       if (isModified && existing) {
         await omnifactClient.deleteDocument(existing.omnifactDocId);
-        if (existing.attachmentDocIds) {
-          for (const attDocId of existing.attachmentDocIds) {
-            await omnifactClient.deleteDocument(attDocId);
-          }
+        for (const attDocId of existing.attachmentDocIds ?? []) {
+          await omnifactClient.deleteDocument(attDocId);
         }
       }
 
-      // Fetch page content and convert
-      const detail = await xwikiClient.getPageContent(space, page.name);
-      const markdown = convertToMarkdown(detail.content, detail.title || page.name);
+      const detail = await xwikiClient.getPageContent(page.space, page.name);
+      const markdown = convertToMarkdown(detail.content, detail.title || page.fullName);
       const mdBuffer = Buffer.from(markdown, "utf-8");
-      const filename = `${page.name}.md`;
+      const filename = `${page.fullName.replace(/\./g, "-")}.md`;
 
-      // Upload markdown with XWiki page URL as metadata
-      const pageUrl = xwikiClient.getPageViewUrl(space, page.name);
+      const pageUrl = xwikiClient.getPageViewUrl(page.space, page.name);
       const doc = await omnifactClient.uploadDocument(
         route.omnifactSpaceId,
-        page.name,
+        page.fullName,
         mdBuffer,
         filename,
         { url: pageUrl }
@@ -86,61 +81,50 @@ export async function syncRoute(
         xwikiVersion: detail.version,
       };
 
-      // Handle attachments
       if (attachmentsConfig.enabled) {
-        const attachments = await xwikiClient.listAttachments(space, page.name);
+        const attachments = await xwikiClient.listAttachments(page.space, page.name);
         const allowedExts = new Set(attachmentsConfig.includeTypes);
         const attDocIds: string[] = [];
 
         for (const att of attachments) {
-          const ext = getExtension(att.name);
-          if (!allowedExts.has(ext)) continue;
-
+          if (!allowedExts.has(getExtension(att.name))) continue;
           try {
-            const attBuffer = await xwikiClient.downloadAttachment(space, page.name, att.name);
+            const attBuffer = await xwikiClient.downloadAttachment(page.space, page.name, att.name);
             const attDoc = await omnifactClient.uploadDocument(
               route.omnifactSpaceId,
-              `${page.name} - ${att.name}`,
+              `${page.fullName} - ${att.name}`,
               attBuffer,
               att.name,
               { url: pageUrl }
             );
             attDocIds.push(attDoc.id);
           } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            summary.errors.push(`Attachment ${att.name} on ${page.name}: ${msg}`);
+            summary.errors.push(`Attachment ${att.name} on ${page.fullName}: ${err instanceof Error ? err.message : String(err)}`);
           }
         }
 
-        if (attDocIds.length > 0) {
-          pageState.attachmentDocIds = attDocIds;
-        }
+        if (attDocIds.length > 0) pageState.attachmentDocIds = attDocIds;
       }
 
-      spaceState[page.name] = pageState;
+      spaceState[page.fullName] = pageState;
       if (isNew) summary.created++;
       else summary.updated++;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      summary.errors.push(`${page.name}: ${msg}`);
+      summary.errors.push(`${page.fullName}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
-  // Handle deleted pages
-  for (const pageName of Object.keys(spaceState)) {
-    if (!pageNames.has(pageName)) {
+  for (const pageKey of Object.keys(spaceState)) {
+    if (!pageKeys.has(pageKey)) {
       try {
-        await omnifactClient.deleteDocument(spaceState[pageName].omnifactDocId);
-        if (spaceState[pageName].attachmentDocIds) {
-          for (const attDocId of spaceState[pageName].attachmentDocIds!) {
-            await omnifactClient.deleteDocument(attDocId);
-          }
+        await omnifactClient.deleteDocument(spaceState[pageKey].omnifactDocId);
+        for (const attDocId of spaceState[pageKey].attachmentDocIds ?? []) {
+          await omnifactClient.deleteDocument(attDocId);
         }
-        delete spaceState[pageName];
+        delete spaceState[pageKey];
         summary.deleted++;
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        summary.errors.push(`Delete ${pageName}: ${msg}`);
+        summary.errors.push(`Delete ${pageKey}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   }
@@ -158,20 +142,16 @@ export async function dryRunRoute(
   const spaceState = state[space] || {};
   const summary: SyncSummary = { created: 0, updated: 0, deleted: 0, skipped: 0, errors: [] };
 
-  const pages = await xwikiClient.listPages(space);
-  const pageNames = new Set(pages.map((p) => p.name));
+  const pages = await xwikiClient.listAllPages(space);
+  const pageKeys = new Set(pages.map((p) => p.fullName));
 
   for (const page of pages) {
-    const existing = spaceState[page.name];
-
-    if (route.exclude?.some((pattern) => {
-      const regex = new RegExp("^" + pattern.replace(/%/g, ".*") + "$");
-      return regex.test(page.fullName);
-    })) {
+    if (isExcluded(page.fullName, route.exclude)) {
       summary.skipped++;
       continue;
     }
 
+    const existing = spaceState[page.fullName];
     const isNew = !existing;
     const isModified = existing && page.modified > existing.lastModified;
 
@@ -186,9 +166,9 @@ export async function dryRunRoute(
     }
   }
 
-  for (const pageName of Object.keys(spaceState)) {
-    if (!pageNames.has(pageName)) {
-      console.log(`  [DELETE] ${space}.${pageName}`);
+  for (const pageKey of Object.keys(spaceState)) {
+    if (!pageKeys.has(pageKey)) {
+      console.log(`  [DELETE] ${pageKey}`);
       summary.deleted++;
     }
   }

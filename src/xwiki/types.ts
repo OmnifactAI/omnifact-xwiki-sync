@@ -41,3 +41,13 @@ export interface XWikiAttachment {
 export interface XWikiAttachmentsResponse {
   attachments: XWikiAttachment[];
 }
+
+export interface XWikiSpaceSummary {
+  name: string;
+  wiki: string;
+  links: XWikiLink[];
+}
+
+export interface XWikiSpacesResponse {
+  spaces: XWikiSpaceSummary[];
+}
