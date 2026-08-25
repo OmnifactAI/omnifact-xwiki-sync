@@ -87,7 +87,7 @@ sync:
 
 attachments:
   enabled: true
-  includeTypes: ["pdf", "png", "jpg", "jpeg", "gif", "svg", "docx", "xlsx"]
+  includeTypes: ["pdf", "svg", "docx", "pptx", "odt"]
 ```
 
 ### Sections
@@ -120,7 +120,7 @@ Each route maps one XWiki space to one Omnifact Space. Pages in the XWiki space 
 |-------|----------|-------------|
 | `xwikiSpace` | yes | XWiki space name. Use dot notation for nested spaces (e.g. `"Engineering.Backend.APIs"`) |
 | `omnifactSpaceId` | yes | Target Omnifact Space UUID |
-| `exclude` | no | List of patterns to exclude. Uses `%` as wildcard (like SQL `LIKE`). Matched against the page's full name (e.g. `"Product.Internal%"` excludes all pages under `Product.Internal`) |
+| `exclude` | no | List of patterns to exclude. Uses `%` as wildcard (like SQL `LIKE`). Matched against the page's full name (e.g. `"Product.Internal%"` excludes all pages under `Product.Internal`). Previously synced pages that match a newly added exclude pattern are deleted from Omnifact on the next sync |
 
 You can define multiple routes to sync different XWiki spaces to different Omnifact Spaces. Run `sync --space <name>` to sync a single route.
 
@@ -139,7 +139,9 @@ Controls whether file attachments on XWiki pages are synced to Omnifact.
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `enabled` | no | `false` | Set to `true` to sync attachments |
-| `includeTypes` | no | `[]` | File extensions to include (without the dot). Only attachments matching these extensions are synced. Example: `["pdf", "docx", "png"]` |
+| `includeTypes` | no | `[]` | File extensions to include (without the dot). Only attachments matching these extensions are synced. Example: `["pdf", "docx", "svg"]` |
+
+Only file types supported by Omnifact can be synced: `txt`, `json`, `md`, `markdown`, `csv`, `svg`, `pdf`, `doc`, `dot`, `docx`, `dotx`, `odt`, `ott`, `ppt`, `pot`, `pps`, `pptx`, `ppsx`, `potx`, `odp`, `otp`. Unsupported entries in `includeTypes` are ignored with a warning.
 
 Each attachment is uploaded as a separate document to Omnifact, named `"Space.SubSpace.PageName - filename.ext"`.
 
@@ -148,6 +150,21 @@ Each attachment is uploaded as a separate document to Omnifact, named `"Space.Su
 Any string value in the config can contain `${VAR_NAME}` placeholders. These are replaced with the corresponding environment variable at load time. Variables are read from a `.env` file in the working directory (via [dotenv](https://www.npmjs.com/package/dotenv)) and from the shell environment.
 
 If a referenced variable is not set, the tool exits with an error naming the missing variable.
+
+## Docker
+
+```bash
+docker build -t omnifact-xwiki-sync .
+
+# One-shot sync; schedule via host cron, systemd timer, or Kubernetes CronJob
+docker run --rm \
+  --env-file .env \
+  -v ./config.yaml:/app/config.yaml:ro \
+  -v omnifact-sync-data:/data \
+  omnifact-xwiki-sync sync
+```
+
+Set `sync.stateFile: "/data/sync-state.json"` in `config.yaml` so the sync state persists in the `omnifact-sync-data` volume across runs. Any CLI command can be passed as the container command (`sync --dry-run`, `list-wikis`, `status`). The container exits with a non-zero status if any page failed to sync, so schedulers can detect failures.
 
 ## Development
 

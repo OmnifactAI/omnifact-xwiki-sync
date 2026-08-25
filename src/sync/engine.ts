@@ -17,11 +17,20 @@ function getExtension(filename: string): string {
   return idx >= 0 ? filename.slice(idx + 1).toLowerCase() : "";
 }
 
-function isExcluded(fullName: string, exclude: string[] | undefined): boolean {
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export function isExcluded(fullName: string, exclude: string[] | undefined): boolean {
   return exclude?.some((pattern) => {
-    const regex = new RegExp("^" + pattern.replace(/%/g, ".*") + "$");
+    // SQL LIKE style: % is a wildcard, everything else matches literally
+    const regex = new RegExp("^" + pattern.split("%").map(escapeRegExp).join(".*") + "$");
     return regex.test(fullName);
   }) ?? false;
+}
+
+function isModifiedSince(modified: string, lastModified: string): boolean {
+  return Date.parse(modified) > Date.parse(lastModified);
 }
 
 export async function syncRoute(
@@ -36,17 +45,16 @@ export async function syncRoute(
   const summary: SyncSummary = { created: 0, updated: 0, deleted: 0, skipped: 0, errors: [] };
 
   const pages = await xwikiClient.listAllPages(space);
-  const pageKeys = new Set(pages.map((p) => p.fullName));
+  // Excluded pages are left out of pageKeys so previously synced pages that
+  // now match an exclude pattern are removed from Omnifact below.
+  const includedPages = pages.filter((p) => !isExcluded(p.fullName, route.exclude));
+  const pageKeys = new Set(includedPages.map((p) => p.fullName));
+  summary.skipped += pages.length - includedPages.length;
 
-  for (const page of pages) {
-    if (isExcluded(page.fullName, route.exclude)) {
-      summary.skipped++;
-      continue;
-    }
-
+  for (const page of includedPages) {
     const existing = spaceState[page.fullName];
     const isNew = !existing;
-    const isModified = existing && page.modified > existing.lastModified;
+    const isModified = existing && isModifiedSince(page.modified, existing.lastModified);
 
     if (!isNew && !isModified) {
       summary.skipped++;
@@ -143,17 +151,14 @@ export async function dryRunRoute(
   const summary: SyncSummary = { created: 0, updated: 0, deleted: 0, skipped: 0, errors: [] };
 
   const pages = await xwikiClient.listAllPages(space);
-  const pageKeys = new Set(pages.map((p) => p.fullName));
+  const includedPages = pages.filter((p) => !isExcluded(p.fullName, route.exclude));
+  const pageKeys = new Set(includedPages.map((p) => p.fullName));
+  summary.skipped += pages.length - includedPages.length;
 
-  for (const page of pages) {
-    if (isExcluded(page.fullName, route.exclude)) {
-      summary.skipped++;
-      continue;
-    }
-
+  for (const page of includedPages) {
     const existing = spaceState[page.fullName];
     const isNew = !existing;
-    const isModified = existing && page.modified > existing.lastModified;
+    const isModified = existing && isModifiedSince(page.modified, existing.lastModified);
 
     if (isNew) {
       console.log(`  [CREATE] ${page.fullName}`);

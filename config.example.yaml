@@ -22,4 +22,7 @@ sync:
 
 attachments:
   enabled: true
-  includeTypes: ["pdf", "png", "jpg", "jpeg", "gif", "svg", "docx", "xlsx"]
+  # Only file types supported by Omnifact are synced. Supported: txt, json,
+  # md, markdown, csv, svg, pdf, doc, dot, docx, dotx, odt, ott, ppt, pot,
+  # pps, pptx, ppsx, potx, odp, otp
+  includeTypes: ["pdf", "svg", "docx", "pptx", "odt"]

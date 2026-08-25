@@ -85,7 +85,7 @@ sync:
 
 attachments:
   enabled: true
-  includeTypes: ["pdf", "png", "jpg", "jpeg", "gif", "svg", "docx", "xlsx"]
+  includeTypes: ["pdf", "svg", "docx", "pptx", "odt"]
 ```
 
 ### Abschnitte
@@ -118,7 +118,7 @@ Jede Route bildet einen XWiki Space auf einen Omnifact Space ab. Seiten im XWiki
 |------|-------------|--------------|
 | `xwikiSpace` | ja | XWiki Space-Name. Punkt-Notation für verschachtelte Spaces verwenden (z.B. `"Engineering.Backend.APIs"`) |
 | `omnifactSpaceId` | ja | Ziel-Omnifact-Space-UUID |
-| `exclude` | nein | Liste von Ausschlussmustern. Verwendet `%` als Platzhalter (wie SQL `LIKE`). Wird gegen den vollständigen Seitennamen geprüft (z.B. schließt `"Product.Internal%"` alle Seiten unter `Product.Internal` aus) |
+| `exclude` | nein | Liste von Ausschlussmustern. Verwendet `%` als Platzhalter (wie SQL `LIKE`). Wird gegen den vollständigen Seitennamen geprüft (z.B. schließt `"Product.Internal%"` alle Seiten unter `Product.Internal` aus). Bereits synchronisierte Seiten, die auf ein neu hinzugefügtes Ausschlussmuster passen, werden beim nächsten Sync aus Omnifact gelöscht |
 
 Es können mehrere Routen definiert werden, um verschiedene XWiki Spaces in verschiedene Omnifact Spaces zu synchronisieren. Mit `sync --space <name>` wird nur eine einzelne Route synchronisiert.
 
@@ -137,7 +137,9 @@ Steuert, ob Dateianhänge von XWiki-Seiten nach Omnifact synchronisiert werden.
 | Feld | Erforderlich | Standard | Beschreibung |
 |------|-------------|----------|--------------|
 | `enabled` | nein | `false` | Auf `true` setzen, um Anhänge zu synchronisieren |
-| `includeTypes` | nein | `[]` | Einzuschließende Dateiendungen (ohne Punkt). Nur Anhänge mit diesen Endungen werden synchronisiert. Beispiel: `["pdf", "docx", "png"]` |
+| `includeTypes` | nein | `[]` | Einzuschließende Dateiendungen (ohne Punkt). Nur Anhänge mit diesen Endungen werden synchronisiert. Beispiel: `["pdf", "docx", "svg"]` |
+
+Es können nur von Omnifact unterstützte Dateitypen synchronisiert werden: `txt`, `json`, `md`, `markdown`, `csv`, `svg`, `pdf`, `doc`, `dot`, `docx`, `dotx`, `odt`, `ott`, `ppt`, `pot`, `pps`, `pptx`, `ppsx`, `potx`, `odp`, `otp`. Nicht unterstützte Einträge in `includeTypes` werden mit einer Warnung ignoriert.
 
 Jeder Anhang wird als separates Dokument in Omnifact hochgeladen, benannt nach `"Space.UnterSpace.Seitenname - dateiname.ext"`.
 
@@ -146,6 +148,21 @@ Jeder Anhang wird als separates Dokument in Omnifact hochgeladen, benannt nach `
 Jeder String-Wert in der Konfiguration kann `${VAR_NAME}`-Platzhalter enthalten. Diese werden beim Laden durch die entsprechende Umgebungsvariable ersetzt. Variablen werden aus einer `.env`-Datei im Arbeitsverzeichnis (über [dotenv](https://www.npmjs.com/package/dotenv)) und aus der Shell-Umgebung gelesen.
 
 Wenn eine referenzierte Variable nicht gesetzt ist, beendet sich das Tool mit einem Fehler, der die fehlende Variable benennt.
+
+## Docker
+
+```bash
+docker build -t omnifact-xwiki-sync .
+
+# Einmaliger Sync; Zeitplanung über Host-Cron, systemd-Timer oder Kubernetes CronJob
+docker run --rm \
+  --env-file .env \
+  -v ./config.yaml:/app/config.yaml:ro \
+  -v omnifact-sync-data:/data \
+  omnifact-xwiki-sync sync
+```
+
+In `config.yaml` `sync.stateFile: "/data/sync-state.json"` setzen, damit der Synchronisierungsstatus im Volume `omnifact-sync-data` über Läufe hinweg erhalten bleibt. Jeder CLI-Befehl kann als Container-Befehl übergeben werden (`sync --dry-run`, `list-wikis`, `status`). Der Container beendet sich mit einem Exit-Code ungleich null, wenn eine Seite nicht synchronisiert werden konnte, sodass Scheduler Fehler erkennen können.
 
 ## Entwicklung
 

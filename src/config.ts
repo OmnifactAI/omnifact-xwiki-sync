@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import yaml from "js-yaml";
 import dotenv from "dotenv";
+import { SUPPORTED_EXTENSIONS } from "./omnifact/client.js";
 
 dotenv.config();
 
@@ -82,6 +83,16 @@ export function loadConfig(path: string): Config {
   config.sync = config.sync || { stateFile: ".sync-state.json" };
   config.sync.stateFile = config.sync.stateFile || ".sync-state.json";
   config.attachments = config.attachments || { enabled: false, includeTypes: [] };
+
+  const includeTypes = (config.attachments.includeTypes || []).map((t) => t.toLowerCase());
+  const unsupported = includeTypes.filter((t) => !SUPPORTED_EXTENSIONS.has(t));
+  if (unsupported.length > 0) {
+    console.warn(
+      `Warning: attachments.includeTypes contains file types not supported by Omnifact, ignoring: ${unsupported.join(", ")}\n` +
+        `Supported types: ${[...SUPPORTED_EXTENSIONS].join(", ")}`
+    );
+  }
+  config.attachments.includeTypes = includeTypes.filter((t) => SUPPORTED_EXTENSIONS.has(t));
 
   return config;
 }

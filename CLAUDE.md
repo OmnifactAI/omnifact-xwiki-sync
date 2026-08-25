@@ -12,7 +12,10 @@ npm run dev -- status                  # Show current sync state
 npm run dev -- list-wikis              # Recursively list all pages in configured spaces
 npm run build                          # Compile TypeScript to dist/
 npm start -- sync                      # Run compiled version
+docker build -t omnifact-xwiki-sync .  # Build container (multi-stage, node:22-alpine)
 ```
+
+All commands accept `-c, --config <path>` (default: `config.yaml`). `list-wikis` also accepts `--space` and `--debug`.
 
 No test framework is configured. No linter is configured.
 
@@ -36,9 +39,13 @@ CLI tool that syncs XWiki wiki pages → Omnifact Spaces (for RAG). Fetches page
 
 Change detection compares XWiki's `modified` timestamp against `lastModified` in the state file. Pages are skipped if `modified <= lastModified`. Exclude patterns match against `page.fullName` (e.g. `"Product.Internal%"` where `%` is a wildcard).
 
+Pages present in the state file but absent from the XWiki listing — or newly matching an exclude pattern — are deleted from Omnifact (page doc plus its attachment docs). `isExcluded` lives in `sync/engine.ts` and is shared with `list-wikis`.
+
+Per-page errors are caught and collected into `summary.errors`; they don't abort the route, but `sync` exits non-zero if any occurred (so cron/Docker schedulers see failures). State is saved after each route completes. `OmnifactClient.deleteDocument` treats 404 as success so a partially failed update (old doc deleted, re-upload failed) is retried cleanly on the next run.
+
 State is keyed by `page.fullName` (e.g. `Main.SubPage.WebHome`) within each route's space entry. Omnifact document names use `page.fullName`; filenames use `page.fullName` with dots replaced by dashes (e.g. `Main-SubPage-WebHome.md`). Content and attachment fetches use `page.space` (the actual nested space path) rather than the route's root space.
 
-Attachments are uploaded as separate Omnifact documents linked to the same page URL metadata. Their IDs are tracked in `attachmentDocIds` on the page state so they can be deleted on update/delete.
+Attachments are filtered by the `attachments.includeTypes` extension allowlist, then uploaded as separate Omnifact documents linked to the same page URL metadata. Their IDs are tracked in `attachmentDocIds` on the page state so they can be deleted on update/delete. The MIME map in `src/omnifact/client.ts` mirrors Omnifact's supported file types exactly; `loadConfig` drops `includeTypes` entries outside `SUPPORTED_EXTENSIONS` with a warning.
 
 ### Config
 

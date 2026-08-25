@@ -26,6 +26,8 @@ const MIME_TYPES: Record<string, string> = {
   otp: "application/vnd.oasis.opendocument.presentation-template",
 };
 
+export const SUPPORTED_EXTENSIONS = new Set(Object.keys(MIME_TYPES));
+
 function mimeTypeForFilename(filename: string): string {
   const ext = filename.slice(filename.lastIndexOf(".") + 1).toLowerCase();
   return MIME_TYPES[ext] ?? "application/octet-stream";
@@ -98,6 +100,14 @@ export class OmnifactClient {
   }
 
   async deleteDocument(docId: string): Promise<void> {
-    await this.http.delete(`/v1/documents/${encodeURIComponent(docId)}`);
+    try {
+      await this.http.delete(`/v1/documents/${encodeURIComponent(docId)}`);
+    } catch (err) {
+      // Already gone (e.g. a previous run deleted it but failed before
+      // re-uploading) — treat as success so the page isn't stuck in an
+      // error loop forever.
+      if (isAxiosError(err) && err.response?.status === 404) return;
+      throw err;
+    }
   }
 }

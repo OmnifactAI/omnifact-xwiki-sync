@@ -3,7 +3,7 @@ import { loadConfig } from "./config.js";
 import { XWikiClient } from "./xwiki/client.js";
 import { OmnifactClient } from "./omnifact/client.js";
 import { loadState, saveState } from "./sync/state.js";
-import { syncRoute, dryRunRoute } from "./sync/engine.js";
+import { syncRoute, dryRunRoute, isExcluded } from "./sync/engine.js";
 
 const program = new Command();
 
@@ -35,6 +35,8 @@ program
         process.exit(1);
       }
 
+      let hadErrors = false;
+
       for (const route of routes) {
         console.log(`\nRoute: ${route.xwikiSpace} → ${route.omnifactSpaceId}`);
 
@@ -52,11 +54,16 @@ program
             config.attachments
           );
           state = result.state;
+          // Save after every route so a hard failure later doesn't lose the
+          // record of documents already uploaded (which would duplicate them
+          // on the next run).
+          saveState(config.sync.stateFile, state);
           const s = result.summary;
           console.log(
             `  Summary: ${s.created} created, ${s.updated} updated, ${s.deleted} deleted, ${s.skipped} skipped`
           );
           if (s.errors.length > 0) {
+            hadErrors = true;
             console.error(`  Errors:`);
             for (const err of s.errors) {
               console.error(`    - ${err}`);
@@ -66,8 +73,10 @@ program
       }
 
       if (!opts.dryRun) {
-        saveState(config.sync.stateFile, state);
         console.log(`\nState saved to ${config.sync.stateFile}`);
+      }
+      if (hadErrors) {
+        process.exitCode = 1;
       }
     } catch (err) {
       console.error(err instanceof Error ? err.message : err);
@@ -129,11 +138,7 @@ program
         let excludedCount = 0;
 
         for (const page of pages) {
-          const excluded = route.exclude?.some((pattern) => {
-            const regex = new RegExp("^" + pattern.replace(/%/g, ".*") + "$");
-            return regex.test(page.fullName);
-          });
-          if (excluded) {
+          if (isExcluded(page.fullName, route.exclude)) {
             console.log(`  [excluded] ${page.fullName}`);
             excludedCount++;
           } else {
